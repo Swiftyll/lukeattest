@@ -71,8 +71,7 @@ void genSavedData()    //pulled from example
     p.SerializeToOstream(&mainOut);
     mainOut.close();
 
-	
-	
+
     DescribedMessage dMsg;
     dMsg.set_full_name(p.descriptor()->full_name());
     string rawMainMsg;
@@ -87,7 +86,6 @@ void genSavedData()    //pulled from example
     printMsg(p);
 }
 
-
 int Comp1::c1method( int input){
     //  Prepare our context and socket
     zmq::context_t context (1);
@@ -96,38 +94,49 @@ int Comp1::c1method( int input){
     std::cout << "Connecting to hello world server." << std::endl;
     socket.connect ("tcp://0.0.0.0:8123");
     //socket.connect ("ipc:///tmp/zmqipc"); //ipc not supported on windows
-	
-	genSavedData();
 
     Person p = Person();
-    p.set_name("Mr. Sender");
+    p.set_name("Luke Swift");
     p.set_id(999);
+	p.set_debug("Unread");
     std::string str;
     p.SerializeToString(&str);
-    int sz = str.length();
-	std::cout << str;
+    
+	DescribedMessage dMsg;
 	
-//	google::protobuf::FileDescriptorProto file;
- //   Person::descriptor()->file()->CopyTo(&file);
+	dMsg.set_full_name(p.descriptor()->full_name());
+	dMsg.set_message(str);
+	dMsg.set_debug_msg("Unread");
+	std::string msg;
+	dMsg.SerializeToString(&msg);
+	int sz = msg.length();
 	
-//    query->size = sz;
-    //socket->send (*query);
+	std::cout << "Debug: " << dMsg.debug_msg();
 
     //  Do 10 requests, waiting each time for a response
     for (int request_nbr = 0; request_nbr != 10; request_nbr++) {
-        //zmq::message_t request (5); 
-        //memcpy (request.data (), "Hello", 5);
-        std::cout << "Sending Hello " << request_nbr << "." << std::endl;
-	    //socket.send (request, ZMQ_SNDMORE || ZMQ_NOBLOCK);
 
+        std::cout << "\nSending Hello " << request_nbr << "." << std::endl;
+
+		//before message sent
+		p.set_debug("Unread");
+		std::cout << "Person debug: " << p.debug() << endl;
+		
+		//send the message
 		zmq::message_t query(sz);
-		memcpy(query.data(), str.c_str(), sz);
+		memcpy(query.data(), msg.c_str(), sz);
 		socket.send (query);
-	
+
         //  Get the reply.
         zmq::message_t reply;
         socket.recv (&reply);
-        std::cout << "Received World " << request_nbr << std::endl;
+		dMsg.ParseFromArray(reply.data(),reply.size());
+		p.ParseFromString(dMsg.message());
+		
+		//read reply
+		std::cout << "Person debug: " << p.debug();
+		std::cout << "\nDebug: " << dMsg.debug_msg();
+
 	usleep(500000);
     }
 

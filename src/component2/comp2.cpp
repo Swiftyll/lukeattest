@@ -14,14 +14,14 @@
 #include <google/protobuf/descriptor_database.h>
 #include <google/protobuf/dynamic_message.h>
 
-//#include "src/pb2/phase2.pb.h"
 
 using namespace google::protobuf;
-void readReply(zmq::message_t &recMsg);
+
+void readReply(zmq::message_t &recMsg);		
+
 void *worker_routine (void *arg)
 {
     zmq::context_t *context = (zmq::context_t *) arg;
-
     zmq::socket_t socket (*context, ZMQ_REP);
     socket.connect ("inproc://workers");
 
@@ -36,26 +36,14 @@ void *worker_routine (void *arg)
         assert(mp_request.size() == 1);
         assert(ok);
 		recMsg = mp_request.pop(); 
-        //   socket.recv (&request);
-   /*      Person p = Person();
-        msg = mp_request.pop(); 
-        std::cout << "size " << msg.size() << std::endl;
-        p.ParseFromArray(msg.data(),msg.size());
-        std::cout << p.name() << std::endl;
-        std::cout << p.id() << std::endl;
- */
-        //std::cout << "Received request: [" << (char*) request.data() << "]" << std::endl;
 
-        // Do some 'work'
-        // sleep (1);
-	
-		readReply(recMsg);
-		
-		
+		//do work
+		readReply(recMsg);		
+		std::cout << "Message Received" << endl;
         // Send reply back to client
         zmq::message_t reply (6);
         memcpy ((void *) reply.data (), "World", 6);
-        socket.send (reply);
+        socket.send (recMsg);
     }
     return (NULL);
 }
@@ -64,21 +52,19 @@ void readReply(zmq::message_t &recMsg){
 	
 //  cfile is a c file descriptor (not to be confused with a protobuf FileDescriptor object)
     int cfile = open("allProto.desc", O_RDONLY);
+	
     FileDescriptorSet fds;
-	//std::cout << recMsg;
+
 //  Parse a FileDescriptorSet object directly from the file
 //  Has the format of a protobuf Message - subclass FileDescriptorSet, defined in <google/protobuf/descriptor.pb.h>
 //  https://developers.google.com/protocol-buffers/docs/reference/cpp/google.protobuf.descriptor.pb#FieldOptions_CType.details
     fds.ParseFromFileDescriptor(cfile);
 		
 //  Use FileDescriptorSet method to print to screen
-    fds.SerializeToOstream(&cout);
+  //  fds.SerializeToOstream(&cout);
 	
 	close(cfile);
 	
-	//Person p;
-	//p.ParseFromArray(recMsg.data(),recMsg.size());
-	//std::cout << p.name() << std::endl;
 // A DescriptorPool is required: provides methods to identify and manage message types at run-time
 // DescriptorPool can be populated from a SimpleDescriptorDatabase, which can be populated with FileDescriptorProto objects
     SimpleDescriptorDatabase sddb;
@@ -87,37 +73,61 @@ void readReply(zmq::message_t &recMsg){
 	   //Populate the sddb
        sddb.Add(fds.file(i));
     }
+	
 // Now construct the DescriptorPool
     DescriptorPool dp(&sddb);
-	//DescriptorPool dp2(recMsg);
+
 // DynamicMessageFactory is constucted from a populated DescriptorPool
 // DescriptorPool, Descriptor, FieldDescriptor etc.: see descriptor.h  - 
 // https://developers.google.com/protocol-buffers/docs/reference/cpp/google.protobuf.descriptor
     DynamicMessageFactory dmf(&dp);
+	
     const Descriptor* desc;
-    desc = dp.FindMessageTypeByName("Person");
+	const Descriptor* payload_desc;
+	
+    desc = dp.FindMessageTypeByName("DescribedMessage");
+
 // Example of dynamically creating a message from a Descriptor, retrieved by name string
     Message *msg = dmf.GetPrototype(desc)->New();
 	msg->ParseFromArray(recMsg.data(),recMsg.size());
-	
-
+		
 // Messages with required fields - Need populated. 
 // Requires FieldDescriptor objects to access
-    const FieldDescriptor* idField = desc->FindFieldByName("id");
-    const FieldDescriptor* nameField = desc->FindFieldByName("name");
+    const FieldDescriptor* nameField = desc->FindFieldByName("full_name");
+	const FieldDescriptor* dataField = desc->FindFieldByName("message");
 
+	
 // Reflection object provides R/W access to dynamic message fields, using FieldDescriptors
-// 
 // https://developers.google.com/protocol-buffers/docs/reference/cpp/google.protobuf.message#Message.GetReflection.details
 // Good example of Reflection at top of that page
-    const Reflection *msgRefl = msg->GetReflection();
-    msgRefl->SetInt32( msg, idField, 8123);
-    msgRefl->SetString( msg, nameField, "Does it work?");
 
-//Now that required fields are populated, the dynamic message can be serialized and printed out.
+    const Reflection *msgRefl = msg->GetReflection();
+
+//  Make payload message
+	payload_desc = dp.FindMessageTypeByName(msgRefl->GetString(*msg, nameField));
+	Message *payload_msg = dmf.GetPrototype(payload_desc)->New();
+	payload_msg->ParseFromString(msgRefl->GetString( *msg, dataField));
+	
+// Reflection of payload message
+	const Reflection *main_msgRefl = payload_msg->GetReflection();
+	
+// Payload fielddescriptors
+	const FieldDescriptor* main_debugField = payload_desc->FindFieldByName("debug");
+	main_msgRefl->SetString (payload_msg,main_debugField,"Read");
+	std::cout << "Payload Read" << endl;
+	
+// Put the payload data back into the envelope 
+	string payload_data;
+	payload_msg->SerializeToString(&payload_data);
+	msgRefl->SetString(msg, dataField, payload_data);
+	
+// Now that required fields are populated, the dynamic message can be serialized and printed out.
     string data;
     msg->SerializeToString(&data);
-    cout << data << endl;
+
+
+// put data back into message to be replied 
+	memcpy(recMsg.data(), data.c_str(), data.length());
 
 // Useful examples of dynamic protobuf logic here : http://www.programmershare.com/2803644/
 // (English not very good)
@@ -212,7 +222,7 @@ void descriptorTests(){
 
 	//Now that required fields are populated, the dynamic message can be serialized and printed out.
     string data;
-    msg->SerializeToString(&data);
+   // msg->SerializeToString(&data);
     cout << data << endl;
 
 	// Useful examples of dynamic protobuf logic here : http://www.programmershare.com/2803644/
@@ -226,7 +236,6 @@ void descriptorTests(){
 
 int Comp2::c2method( int input){
 
-    descriptorTests();
 
     //  Prepare our context and sockets
     zmq::context_t context (1);

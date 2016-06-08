@@ -2,4 +2,5 @@ message DescribedMessage
 {
     required string full_name = 1;
     required bytes message = 2;
+	optional string debug_msg = 3;
 }
